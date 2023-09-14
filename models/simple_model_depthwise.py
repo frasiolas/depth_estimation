@@ -26,26 +26,106 @@ from loss_function import gradient_loss, SilogLoss
 
 
 
+class SigLoss(nn.Module):
+    """SigLoss.
+
+    Args:
+        valid_mask (bool, optional): Whether filter invalid gt
+        loss_weight (float, optional): Weight of the loss. Defaults to 1.0.
+    """
+
+    def __init__(self,
+                 valid_mask=True,
+                 loss_weight=1.0,
+                 max_depth=None,
+                 warm_up=False,
+                 warm_iter=100):
+        super(SigLoss, self).__init__()
+        self.valid_mask = valid_mask
+        self.loss_weight = loss_weight
+        self.max_depth = max_depth
+
+        self.eps = 0.1 # avoid grad explode
+
+        # HACK: a hack implement for warmup sigloss
+        self.warm_up = warm_up
+        self.warm_iter = warm_iter
+        self.warm_up_counter = 0
+        self.rms = torch.nn.MSELoss()
+
+    def sigloss(self, input, target):
+        if self.valid_mask:
+            valid_mask = target > 0
+            if self.max_depth is not None:
+                valid_mask = torch.logical_and(target > 0, target <= self.max_depth)
+            input = input[valid_mask]
+            target = target[valid_mask]
+        
+        if self.warm_up:
+            if self.warm_up_counter < self.warm_iter:
+                g = torch.log(input + self.eps) - torch.log(target + self.eps)
+                g = 0.15 * torch.pow(torch.mean(g), 2)
+                self.warm_up_counter += 1
+                return torch.sqrt(g)
+
+        g = torch.log(input) - torch.log(target)
+        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)
+        return torch.sqrt(Dg)
+
+    def rmseloss(self, input, target):
+        if self.valid_mask:
+            valid_mask = target > 0
+            if self.max_depth is not None:
+                valid_mask = torch.logical_and(target > 0, target <= self.max_depth)
+            input = input[valid_mask]
+            target = target[valid_mask]
+
+        # return torch.log(torch.sqrt(self.rms(input, target)))
+        return torch.sqrt(self.rms(input, target))
+
+    def sqrelloss(self, input, target):
+        if self.valid_mask:
+            valid_mask = target > 0
+            if self.max_depth is not None:
+                valid_mask = torch.logical_and(target > 0, target <= self.max_depth)
+            input = input[valid_mask]
+            target = target[valid_mask]
+
+        return torch.mean(torch.pow(input - target, 2) / target)
+
+    def forward(self,
+                depth_pred,
+                depth_gt,
+                **kwargs):
+        """Forward function."""
+        
+        loss_depth = self.loss_weight * self.sigloss(
+            depth_pred,
+            depth_gt,
+            )
+        return loss_depth
+
+
 def depthwise(in_channels, kernel_size):
     padding = (kernel_size-1) // 2
     assert 2*padding == kernel_size-1, "parameters incorrect. kernel={}, padding={}".format(kernel_size, padding)
     return nn.Sequential(
           nn.Conv2d(in_channels,in_channels,kernel_size,stride=1,padding=padding,bias=False,groups=in_channels),
-          nn.BatchNorm2d(in_channels),
-          nn.ReLU(inplace=True),
+          #nn.BatchNorm2d(in_channels),
+          #nn.ReLU(inplace=True),
         )
 
 def pointwise(in_channels, out_channels):
     return nn.Sequential(
           nn.Conv2d(in_channels,out_channels,1,1,0,bias=False),
-          nn.BatchNorm2d(out_channels),
-           nn.ReLU(inplace=True),
+          #nn.BatchNorm2d(out_channels),
+           #nn.ReLU(inplace=True),
         )
 
 def pointwise_out(in_channels, out_channels):
     return nn.Sequential(
           nn.Conv2d(in_channels,out_channels,1,1,0,bias=False),
-          nn.BatchNorm2d(out_channels)
+          #nn.BatchNorm2d(out_channels)
         )
 
 
@@ -85,36 +165,81 @@ class Decoder(nn.Module):
             nn.Sigmoid()
         )
  
-
+        self.conv3_19 = nn.Conv2d(384, 384, kernel_size=7, padding=9, groups=384, dilation=3, padding_mode='reflect')
+        self.conv3_13 = nn.Conv2d(384, 384, kernel_size=5, padding=6, groups=384, dilation=3, padding_mode='reflect')
+        self.conv3_7 = nn.Conv2d(384, 384, kernel_size=3, padding=3, groups=384, dilation=3, padding_mode='reflect')
+        self.conv2_3_19 = nn.Conv2d(260, 260, kernel_size=7, padding=9, groups=260, dilation=3, padding_mode='reflect')
+        self.conv2_3_13 = nn.Conv2d(260, 260, kernel_size=5, padding=6, groups=260, dilation=3, padding_mode='reflect')
+        self.conv2_3_7 = nn.Conv2d(260, 260, kernel_size=3, padding=3, groups=260, dilation=3, padding_mode='reflect')
+        self.conv3_3_19 = nn.Conv2d(130, 130, kernel_size=7, padding=9, groups=130, dilation=3, padding_mode='reflect')
+        self.conv3_3_13 = nn.Conv2d(130, 130, kernel_size=5, padding=6, groups=130, dilation=3, padding_mode='reflect')
+        self.conv3_3_7 = nn.Conv2d(130, 130, kernel_size=3, padding=3, groups=130, dilation=3,  padding_mode='reflect')
+        self.conv4_3_19 = nn.Conv2d(90, 90, kernel_size=7, padding=9, groups=90, dilation=3, padding_mode='reflect')
+        self.conv4_3_13 = nn.Conv2d(90, 90, kernel_size=5, padding=6, groups=90, dilation=3, padding_mode='reflect')
+        self.conv4_3_7 = nn.Conv2d(90, 90, kernel_size=3, padding=3, groups=90, dilation=3,  padding_mode='reflect')
+        self.conv5_3_19 = nn.Conv2d(64, 64, kernel_size=7, padding=9, groups=64, dilation=3, padding_mode='reflect')
+        self.conv5_3_13 = nn.Conv2d(64, 64, kernel_size=5, padding=6, groups=64, dilation=3, padding_mode='reflect')
+        self.conv5_3_7 = nn.Conv2d(64, 64, kernel_size=3, padding=3, groups=64, dilation=3,  padding_mode='reflect')
+        self.relu = nn.ReLU(inplace=True)
 
    
 
 
     def forward(self,x,dec1,dec2,dec3,dec4):
    
-        x = self.conv1(x)
-        x= F.interpolate(x,scale_factor=2, mode= 'nearest')
         
+   
+        x = self.conv1(x)
+        x1 = self.conv3_19(x)
+        x2 = self.conv3_13(x)
+        x3 = self.conv3_7(x)
+        x = x1 + x2 + x3 + x
+        x = self.relu(x)
+        x= F.interpolate(x,scale_factor=2, mode= 'nearest')
+
         #---------------
         x = torch.cat((x,dec4),1)
         x = self.conv2(x)
+        x1 = self.conv2_3_19(x)
+        x2 = self.conv2_3_13(x)
+        x3 = self.conv2_3_7(x)
+        x = x1 + x2 + x3 + x
+        x = self.relu(x)
         x= F.interpolate(x,scale_factor=2, mode= 'nearest')
         #---------------
         x = torch.cat((x,dec3),1)
         x = self.conv3(x)
-        x= F.interpolate(x,scale_factor=2, mode= 'nearest') 
+        x1 = self.conv3_3_19(x)
+        x2 = self.conv3_3_13(x)
+        x3 = self.conv3_3_7(x)
+        x = x1 + x2 + x3 + x
+       
+        x = self.relu(x)
+        x= F.interpolate(x,scale_factor=2, mode= 'nearest')
         #---------------
         x = torch.cat((x,dec2),1)
         x = self.conv4(x)
-        x= F.interpolate(x,scale_factor=2, mode= 'nearest') 
+        x1 = self.conv4_3_19(x)
+        x2 = self.conv4_3_13(x)
+        x3 = self.conv4_3_7(x)
+        x = x1 + x2 + x3 + x
+ 
+        x = self.relu(x)
+        x= F.interpolate(x,scale_factor=2, mode= 'nearest')
         #---------------
         x = torch.cat((x,dec1),1)
-        x = self.conv5(x)
-        x= F.interpolate(x,scale_factor=2, mode= 'nearest') 
+        x = self.conv5(x) 
+        x1 = self.conv5_3_19(x)
+        x2 = self.conv5_3_13(x)
+        x3 = self.conv5_3_7(x)
+        x = x1 + x2 + x3 + x
+        x = self.relu(x)
+        x= F.interpolate(x,scale_factor=2, mode= 'nearest')
         #--------------
         x= self.conv6(x) * 10
-        
         return x
+
+           
 
 
 
@@ -148,64 +273,5 @@ class EncoderDecoder(nn.Module):
         out = self.Decoder.forward(out,dec1,dec2,dec3,dec4)
         return out
     
-def main() :
+
     
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    transformss = transforms.ToPILImage()
-    model = EncoderDecoder(batch_size=4)
-    num_epochs = 20
-    BatchSize = 4
-    pytorch_total_params = sum(p.numel() for p in model.parameters())
-    print(pytorch_total_params)
-    PATH_SAVE = r'C:\Users\ppapadop\Desktop\depth_vir\mobilenet_simple_depthwise.pth'
-    #model.load_state_dict(torch.load(PATH_SAVE))
-    criterion = nn.L1Loss()
-    log_loss = SilogLoss()
-   
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
-    train_dataset = NyuDepth_train()
-    train_load = DataLoader(dataset=train_dataset, batch_size=BatchSize, shuffle=True)
-    model.cuda()
-    model.train() 
-    for epoch in range(num_epochs):  # loop over the dataset multiple times   
-        t0 = time.time()
-        running_loss = 0.0
-        for i, data in enumerate(train_load, 0):
-            optimizer.zero_grad()
-            inputs = data['image'].to(device)
-            outputs = data['depth'].to(device)
-        
-            out = model.forward(inputs)
-            out = out.to(device)
-            grad_loss = gradient_loss(out/10, outputs/10)
-            loss_l1 =criterion(out/10, outputs/10)
-            loss_ssim = 1 - ssim(out/10, outputs/10, data_range=1, size_average=True)
-            loss_log = log_loss(out/10, outputs/10)
-            loss =  0.5 * loss_l1 + 0.5 * loss_ssim
-            loss.backward()
-            running_loss = running_loss + loss.item()
-            optimizer.step()
-        a = running_loss / i
-        print(f'[{epoch + 1}] training_loss: {running_loss / i :.3f}')
-        print('{} seconds'.format(time.time() - t0))
-        torch.save(model.state_dict(), PATH_SAVE)
-        print('updated training weights')
-        scheduler.step()
-       
-
-  
-
-
-
-
-if __name__ == '__main__':
-    main()
-       
-
-  
-
-
-
-
