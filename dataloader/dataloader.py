@@ -124,8 +124,6 @@ class NyuDepth_train(Dataset):
     if random.random() <0.5 :
       image = veritcal(image)
       depth = veritcal(depth)
-     
-    
     
     y_transforms =transforms.Compose([ transforms.Resize((448,448))])
     
@@ -153,35 +151,3 @@ def renormalize(tensor):
     maxTo=1
     return minTo + (maxTo - minTo) * ((tensor - minFrom) / (maxFrom - minFrom))
 
-
-def aa(loader) :
-  mean = 0.
-  std = 0.
-  for images, _ in loader:
-      print(images[0])
-      batch_samples = images.size(0) # batch size (the last batch can have smaller size!)
-      images = images.view(batch_samples, images.size(1), -1)
-      mean += images.mean(2).sum(0)
-      std += images.std(2).sum(0)
-
-  mean /= len(loader.dataset)
-  std /= len(loader.dataset)
-
-  return mean ,std
-
-
-def main() :
-   transformss = transforms.ToPILImage()
-   train_dataset = NyuDepth_eigen_test()
-   train_load = DataLoader(dataset=train_dataset, batch_size=1, shuffle=True)
-   datatiter = iter(train_load)
-   data = next(datatiter)
-   input = torch.autograd.Variable(data['image'].cuda())
-   output = torch.autograd.Variable(data['depth'].cuda())
-   print(input.shape)
-   print(output.shape)
-  
-
-
-if __name__ == '__main__':
-    main()
