@@ -35,57 +35,6 @@ def inverse_depth_norm(depth):
     return depth
 
 
-class NyuDepth_test(Dataset):
-
-  def __init__(self):
-    self.nyu_depth = pd.read_csv(r'C:\Users\ppapadop\Desktop\depth_vir\datasets\nyu2_test.csv', sep = ',')
-   
-    self.meanx = [0.485, 0.456, 0.406]
-    self.stdx = [0.229, 0.224, 0.225]
-
-    self.n_samples = self.nyu_depth.shape[0]
-
-  
-  def __getitem__(self, index):
-    path_x =  self.nyu_depth._get_value(index, 'image', takeable=False)
-    image = Image.open(path_x)
-    path_y =  self.nyu_depth._get_value(index, 'depth', takeable=False)
-    depth = Image.open(path_y)
-    crop_width = 620
-    crop_height = 460
-    image = crop_image(image, crop_width, crop_height)
-    depth = crop_image(depth, crop_width, crop_height)
-   
-
-    x_transforms = transforms.Compose([
-       transforms.Resize((448,448)),
-       transforms.ToTensor(),
-       transforms.Normalize(torch.Tensor(self.meanx), torch.Tensor(self.stdx))
-    ])
-    rgb = image
-    to_tensor = transforms.ToTensor()
-    transformation = transforms.ToTensor()
-    depth = np.array(depth).astype(np.float32)
-    depth = depth/1000.0  #From 8bit to range [0, 10] (meter)
-    #zero_mask = depth == 0.0
-    depth = transformation(depth)
-    #depth = torch.tensor(depth).unsqueeze(dim=0)
-    depth = torch.clamp(depth, 10/100.0, 10)
-    #depth = 10 / depth
-    #depth[:, zero_mask] = 0.0
-    rgb = to_tensor(rgb)
-   
-    image = x_transforms(image)
-
-
-
-    image = renormalize(image)
-    return {'image': image, 'depth': depth, 'rgb':rgb}
-
-  def __len__(self):
-    return self.n_samples
-
-
 class NyuDepth_eigen_test(Dataset):
 
   def __init__(self):
@@ -135,13 +84,8 @@ class NyuDepth_eigen_test(Dataset):
     #depth = to_tensor(depth)
     #depth = torch.tensor(depth).unsqueeze(dim=0)
     #depth = torch.clamp(depth, 10/100.0, 10)
-    #depth = 10 / depth
-    #depth[:, zero_mask] = 0.0
-    #rgb = to_tensor(rgb)
    
     image = x_transforms(image)
-
-
 
     image = renormalize(image)
     return {'image': image, 'depth': depth,}
@@ -192,9 +136,6 @@ class NyuDepth_train(Dataset):
     zero_mask = depth == 0.0
     depth = transformation(depth)
     depth = torch.clamp(depth, 10/100.0, 10)
-    #depth = 10 / depth
-    #depth[:, zero_mask] = 0.0
-   
     image = x_transforms(image)
     image = renormalize(image)
    
