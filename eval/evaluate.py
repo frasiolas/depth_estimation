@@ -17,7 +17,7 @@ import numpy as np
 import glob
 from dataloader import NyuDepth_test, NyuDepth_eigen_test
 
-from mobilevit_models.model_with_dilation import EncoderDecoder
+from mobilevit_models.lightweight_model import EncoderDecoder
 from test import inverse_depth_norm
 def eval_depth2(pred, target):
     assert pred.shape == target.shape
